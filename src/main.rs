@@ -2,6 +2,10 @@ use bevy::prelude::*;
 use serde::Deserialize;
 use std::fs;
 
+use diagnostic_plugin::DiagnosticPlugin;
+
+mod diagnostic_plugin;
+
 #[derive(Deserialize)]
 struct Theme {
     ground: String,
@@ -66,16 +70,20 @@ fn setup(
     map: Res<Map>,
     config: Res<Config>,
     theme: Res<Theme>,
+    time: Res<Time>
 ) {
+    println!("Starting resource creation {:?}", time.delta_seconds());
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
     commands.spawn_bundle(UiCameraBundle::default());
+    let sprite = Sprite::new(Vec2::new(
+                config.tile_scale - config.tile_border_size,
+                config.tile_scale - config.tile_border_size,
+            ));
+
     for (i, tile) in map.tiles.iter().enumerate() {
         commands.spawn_bundle(SpriteBundle {
             material: materials.add(Color::hex(theme.ground.clone()).unwrap().into()),
-            sprite: Sprite::new(Vec2::new(
-                config.tile_scale - config.tile_border_size,
-                config.tile_scale - config.tile_border_size,
-            )),
+            sprite: sprite.clone(),
             transform: Transform::from_xyz(
                 config.tile_scale * map.get_x(i) as f32 - map.width as f32 * config.tile_scale / 2.0,
                 config.tile_scale * map.get_y(i) as f32 - map.height as f32 * config.tile_scale / 2.0,
@@ -84,12 +92,14 @@ fn setup(
             ..Default::default()
         });
     }
+    println!("Ending resource creation {:?}", time.delta_seconds());
 }
 
 
 fn main() {
     App::build()
         .add_plugins(DefaultPlugins)
+        .add_plugin(DiagnosticPlugin)
         .add_startup_system_to_stage(StartupStage::PreStartup, config_load.system())
         .add_startup_system(setup.system())
         .run();
