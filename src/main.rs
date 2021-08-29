@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_ecs_tilemap::prelude::*;
 use serde::Deserialize;
 use std::fs;
 
@@ -7,16 +8,12 @@ use diagnostic_plugin::DiagnosticPlugin;
 mod diagnostic_plugin;
 
 #[derive(Deserialize)]
-struct Theme {
-    ground: String,
-}
-
-#[derive(Deserialize)]
 struct Config {
-    tile_scale: f32,
-    tile_border_size: f32,
-    map_width: usize,
-    map_height: usize
+    map_width: u32,
+    map_height: u32,
+    camera_zoom_speed: f32,
+    camera_max_zoom: f32,
+    camera_min_zoom: f32,
 }
 
 #[derive(PartialEq, Copy, Clone)]
@@ -25,82 +22,73 @@ enum TileType {
     Resource,
 }
 
-struct Map {
-    tiles: Vec<TileType>,
-    width: usize,
-    height: usize,
-}
-
-impl Map {
-    fn get_x(&self, i: usize) -> usize{
-        i % self.width
-    } 
-    fn get_y(&self, i: usize) -> usize{
-        i / self.width
-    } 
-}
-
-fn new_map(width: usize, height: usize) -> Map {
-    let tiles = vec![TileType::Ground; width * height];
-    Map {
-        tiles,
-        width,
-        height,
-    }
-}
-
 fn config_load(mut commands: Commands) {
     let config: Config = toml::from_str(
         &fs::read_to_string("config.toml").expect("Something went wrong reading the config file!"),
     )
     .expect("Something went wrong parsing the config file!");
-    let theme: Theme = toml::from_str(
-        &fs::read_to_string("themes/tiles.toml")
-            .expect("Something went wrong reading the theme file!"),
-    )
-    .expect("Something went wrong parsing the theme file!");
-    commands.insert_resource(new_map(config.map_width, config.map_height));
     commands.insert_resource(config);
-    commands.insert_resource(theme);
 }
 
-fn setup(
+fn startup(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    map: Res<Map>,
-    config: Res<Config>,
-    theme: Res<Theme>,
-    time: Res<Time>
+    mut map_query: MapQuery,
+    config:Res<Config>
 ) {
-    println!("Starting resource creation {:?}", time.delta_seconds());
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
-    commands.spawn_bundle(UiCameraBundle::default());
-    let sprite = Sprite::new(Vec2::new(
-                config.tile_scale - config.tile_border_size,
-                config.tile_scale - config.tile_border_size,
-            ));
 
-    for (i, tile) in map.tiles.iter().enumerate() {
-        commands.spawn_bundle(SpriteBundle {
-            material: materials.add(Color::hex(theme.ground.clone()).unwrap().into()),
-            sprite: sprite.clone(),
-            transform: Transform::from_xyz(
-                config.tile_scale * map.get_x(i) as f32 - map.width as f32 * config.tile_scale / 2.0,
-                config.tile_scale * map.get_y(i) as f32 - map.height as f32 * config.tile_scale / 2.0,
-                0.0,
-            ),
-            ..Default::default()
-        });
-    }
-    println!("Ending resource creation {:?}", time.delta_seconds());
+    let texture_handle = asset_server.load("tiles.png");
+    let material_handle = materials.add(ColorMaterial::texture(texture_handle));
+
+    // Create map entity and component:
+    let map_entity = commands.spawn().id();
+    let mut map = Map::new(0u16, map_entity);
+
+    // Creates a new layer builder with a layer entity.
+    let (mut layer_builder, _) = LayerBuilder::new(
+        &mut commands,
+        LayerSettings::new(
+            MapSize(config.map_width, config.map_height),
+            ChunkSize(16, 16),
+            TileSize(16.0, 16.0),
+            TextureSize(96.0, 16.0),
+        ),
+        0u16,
+        0u16,
+        None,
+    );
+    layer_builder.set_all(TileBundle::default());
+
+    // Builds the layer.
+    // Note: Once this is called you can no longer edit the layer until a hard sync in bevy.
+    let layer_entity = map_query.build_layer(&mut commands, layer_builder, material_handle);
+
+    // Required to keep track of layers for a map internally.
+    map.add_layer(&mut commands, 0u16, layer_entity);
+
+    // Spawn Map
+    // Required in order to use map_query to retrieve layers/tiles.
+    commands
+        .entity(map_entity)
+        .insert(map)
+        .insert(Transform::from_xyz(-128.0, -128.0, 0.0))
+        .insert(GlobalTransform::default());
 }
-
 
 fn main() {
     App::build()
+        .insert_resource(WindowDescriptor {
+            width: 1270.0,
+            height: 720.0,
+            title: String::from("Map Example"),
+            ..Default::default()
+        })
         .add_plugins(DefaultPlugins)
         .add_plugin(DiagnosticPlugin)
+        .add_plugin(TilemapPlugin)
         .add_startup_system_to_stage(StartupStage::PreStartup, config_load.system())
-        .add_startup_system(setup.system())
+        .add_startup_system(startup.system())
         .run();
 }

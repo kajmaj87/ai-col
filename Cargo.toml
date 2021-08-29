@@ -6,6 +6,10 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.5"
+bevy = { version = "0.5.0", features = ["dynamic"] }
+bevy_ecs_tilemap = { git = "https://github.com/StarArawn/bevy_ecs_tilemap.git", rev = "3212ef32ac1afd9225bf184c5c4ab6bd55c1daa4" }
 toml = "0.5.8"
 serde = { version = "1.0.129", features = ["derive"] }
+
+[profile.release]
+debug = true
