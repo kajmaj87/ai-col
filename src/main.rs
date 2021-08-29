@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, prelude::*};
 use bevy_ecs_tilemap::prelude::*;
 use serde::Deserialize;
 use std::fs;
@@ -6,11 +6,13 @@ use std::fs;
 use diagnostic_plugin::DiagnosticPlugin;
 
 mod diagnostic_plugin;
+mod helpers;
 
 #[derive(Deserialize)]
 struct Config {
     map_width: u32,
     map_height: u32,
+    tile_scale: f32,
     camera_zoom_speed: f32,
     camera_max_zoom: f32,
     camera_min_zoom: f32,
@@ -37,7 +39,9 @@ fn startup(
     mut map_query: MapQuery,
     config:Res<Config>
 ) {
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    let mut camera = OrthographicCameraBundle::new_2d();
+    camera.orthographic_projection.scale = 1.0 / config.tile_scale;
+    commands.spawn_bundle(camera);
 
     let texture_handle = asset_server.load("tiles.png");
     let material_handle = materials.add(ColorMaterial::texture(texture_handle));
@@ -77,18 +81,39 @@ fn startup(
         .insert(GlobalTransform::default());
 }
 
+fn update_map(mut map_query: MapQuery, mut commands: Commands){
+        let position = TilePos(2, 5);
+        // Ignore errors for demo sake.
+        let _ = map_query.set_tile(
+            &mut commands,
+            position,
+            Tile {
+                texture_index: 2,
+                ..Default::default()
+            },
+            0u16,
+            0u16,
+        );
+        map_query.notify_chunk_for_tile(position, 0u16, 0u16);
+}
+
 fn main() {
     App::build()
         .insert_resource(WindowDescriptor {
             width: 1270.0,
             height: 720.0,
-            title: String::from("Map Example"),
+            title: String::from("AI-Col"),
             ..Default::default()
         })
         .add_plugins(DefaultPlugins)
-        .add_plugin(DiagnosticPlugin)
+        // .add_plugin(DiagnosticPlugin)
+        .add_plugin(LogDiagnosticsPlugin::default())
+        .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(TilemapPlugin)
         .add_startup_system_to_stage(StartupStage::PreStartup, config_load.system())
         .add_startup_system(startup.system())
+        .add_system(update_map.system())
+        .add_system(helpers::camera::movement.system())
+        .add_system(helpers::texture::set_texture_filters_to_nearest.system())
         .run();
 }
